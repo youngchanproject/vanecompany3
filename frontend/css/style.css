@@ -86,3 +86,26 @@ button {
 button:hover {
     background-color: #0056b3;
 }
+
+/* 메시지 입력칸 크기 확대 */
+#text-input {
+    width: 50%; /* 전체 챗봇 너비의 절반 */
+    padding: 12px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+#send-btn {
+    padding: 12px 24px;
+    margin-left: 10px;
+    border: none;
+    border-radius: 5px;
+    background-color: #007BFF;
+    color: white;
+    cursor: pointer;
+}
+
+#send-btn:hover {
+    background-color: #0056b3;
+}
