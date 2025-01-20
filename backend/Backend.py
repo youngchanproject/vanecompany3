@@ -1,32 +1,29 @@
 from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
 import os
-import openai  # OpenAI 라이브러리 추가
+import openai
+import re
+import json
 
-# Flask 앱 생성 (frontend 폴더에서 정적 파일 제공)
 app = Flask(__name__, static_folder='../frontend', static_url_path='/')
 CORS(app)
 
 os.environ["OPENAI_API_KEY"] = "sk-TiNSExMJ6UnI4dHEB7EBMUol2XnrRGHVL-D9iAMU87T3BlbkFJPqCaU5KoF6GdtDOPLqmS7yESy1Wea_jVvG7whDXIEA"
 
-# 계약서 종류 딕셔너리
 contract_types = {
     "1": "부동산임대차계약서",
     "2": "위임장",
     "3": "소장"
 }
 
-# 메인 페이지(index.html) 제공
 @app.route('/')
 def serve():
     return send_from_directory(app.static_folder + '/public', 'index.html')
 
-# 정적 파일(css, js) 제공
 @app.route('/<path:path>')
 def static_files(path):
     return send_from_directory(app.static_folder, path)
 
-# 계약서 종류 선택 처리
 @app.route('/select', methods=['POST'])
 def select():
     data = request.get_json()
@@ -39,39 +36,110 @@ def select():
 
     return jsonify({"message": response})
 
-# GPT API를 통한 계약서 내용 생성
+
 @app.route('/generate', methods=['POST'])
 def generate_contract():
     data = request.get_json()
     selection = data.get('selection')
+    extracted_fields = data.get('extracted_fields', {})  # JSON 필드 데이터 받기
 
     if selection not in contract_types:
         return jsonify({"error": "잘못된 선택입니다. 1, 2, 3 중에서 선택해 주세요."})
 
     contract_type = contract_types[selection]
-    prompt = f"'{contract_type}'의 표준 계약서를 작성해 주세요."
+
+    # 1단계: 기본 계약서 템플릿 생성
+    template_prompt = f"'{contract_type}'의 표준 계약서를 작성해 주세요."
 
     try:
-        print(f"GPT API 호출 프롬프트: {prompt}")
-        response = openai.chat.completions.create(
+        template_response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
+                {"role": "user", "content": template_prompt}
             ],
             max_tokens=1000,
             temperature=0.7
         )
-        generated_text = response.choices[0].message.content.strip()
-        print(f"GPT API 응답: {generated_text}")
+        contract_template = template_response.choices[0].message.content.strip()
 
-        return jsonify({"contract": generated_text})
+        # 2단계: JSON 데이터를 이용해 계약서 업데이트
+        if extracted_fields:
+            update_prompt = f"""
+            다음 계약서 템플릿에 주어진 JSON 데이터의 값들을 적절한 위치에 삽입해주세요.
+
+            계약서 템플릿:
+            {contract_template}
+
+            JSON 데이터:
+            {json.dumps(extracted_fields, ensure_ascii=False)}
+
+            요구사항:
+            1. JSON 데이터의 각 필드를 계약서의 적절한 위치에 삽입해주세요
+            2. 데이터가 없는 필드는 '[필드명]' 형식으로 남겨두세요
+            3. 계약서의 전체적인 형식과 구조는 유지해주세요
+            4. 계약서 내용만 반환해주세요
+            """
+
+            update_response = openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": update_prompt}
+                ],
+                max_tokens=1500,
+                temperature=0.7
+            )
+            updated_contract = update_response.choices[0].message.content.strip()
+            return jsonify({"contract": updated_contract})
+
+        return jsonify({"contract": contract_template})
 
     except Exception as e:
-        print(f"GPT API 호출 에러: {e}")
         return jsonify({"error": str(e)})
 
-# GPT가 직접 입력 항목을 선별하여 사용자에게 안내
+
+@app.route('/update-contract', methods=['POST'])
+def update_contract():
+    data = request.get_json()
+    current_contract = data.get('current_contract', '')
+    extracted_fields = data.get('extracted_fields', {})
+
+    if not current_contract or not extracted_fields:
+        return jsonify({"error": "계약서 내용과 필드 데이터가 필요합니다."})
+
+    try:
+        update_prompt = f"""
+        다음 계약서의 내용을 주어진 JSON 데이터를 이용해 업데이트해주세요.
+
+        현재 계약서:
+        {current_contract}
+
+        JSON 데이터:
+        {json.dumps(extracted_fields, ensure_ascii=False)}
+
+        요구사항:
+        1. JSON 데이터의 각 필드를 계약서의 적절한 위치에 삽입해주세요
+        2. 데이터가 없는 필드는 '[필드명]' 형식으로 남겨두세요
+        3. 계약서의 전체적인 형식과 구조는 유지해주세요
+        4. 계약서 내용만 반환해주세요
+        """
+
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": update_prompt}
+            ],
+            max_tokens=1500,
+            temperature=0.7
+        )
+        updated_contract = response.choices[0].message.content.strip()
+        return jsonify({"contract": updated_contract})
+
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 @app.route('/input-fields', methods=['POST'])
 def get_input_fields():
     data = request.get_json()
@@ -87,7 +155,6 @@ def get_input_fields():
     )
 
     try:
-        print(f"GPT API 호출 프롬프트 (입력 항목 선별): {prompt}")
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -106,12 +173,58 @@ def get_input_fields():
         for field in fields:
             request_message += f"- {field}\n"
 
-        print(f"사용자 입력 요청 메시지: {request_message}")
         return jsonify({"message": request_message})
 
     except Exception as e:
-        print(f"GPT API 호출 에러 (입력 항목 선별): {e}")
         return jsonify({"error": str(e)})
+
+@app.route('/extract-fields', methods=['POST'])
+def extract_fields():
+    print("[DEBUG] /extract-fields 엔드포인트 호출됨")  # 엔드포인트 호출 확인
+
+    data = request.get_json()
+    user_input = data.get('user_input')
+    print(f"[DEBUG] 사용자 입력: {user_input}")  # 사용자 입력 확인
+
+    prompt = (
+        "다음 문장에서 계약서에 포함되어야 할 항목을 JSON 형태로 반환해 주세요. "
+        "설명 없이 JSON 데이터만 출력해 주세요.\n"
+        f"문장: {user_input}"
+    )
+
+    try:
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=500,
+            temperature=0.7
+        )
+        extracted_data = response.choices[0].message.content.strip()
+        print(f"[DEBUG] GPT 응답 데이터: {extracted_data}")  # GPT 응답 확인
+
+        json_match = re.search(r'\{.*\}', extracted_data, re.DOTALL)
+        if json_match:
+            clean_json = json_match.group()
+            json_data = json.loads(clean_json)
+            print(f"[DEBUG] 추출된 JSON: {json.dumps(json_data, ensure_ascii=False, indent=4)}")
+
+            # JSON 파일 저장
+            with open('extracted_fields.json', 'w', encoding='utf-8') as json_file:
+                json.dump(json_data, json_file, ensure_ascii=False, indent=4)
+            print("[INFO] JSON 파일 생성 완료: extracted_fields.json")
+
+            return jsonify({"extracted_fields": clean_json})
+        else:
+            print("[ERROR] JSON 추출 실패")
+            return jsonify({"error": "JSON 데이터를 추출하지 못했습니다."})
+
+    except Exception as e:
+        print(f"[ERROR] GPT API 호출 에러: {e}")
+        return jsonify({"error": str(e)})
+
 
 if __name__ == '__main__':
     app.run(debug=True)
