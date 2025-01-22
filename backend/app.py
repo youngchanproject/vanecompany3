@@ -1,4 +1,5 @@
 from flask import Flask, send_from_directory, jsonify, request
+from flask import render_template
 from flask_cors import CORS
 import os
 import openai
@@ -6,7 +7,7 @@ import re
 import json
 from docx import Document
 
-app = Flask(__name__, static_folder='../frontend', static_url_path='/')
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 os.environ["OPENAI_API_KEY"] = "sk-TiNSExMJ6UnI4dHEB7EBMUol2XnrRGHVL-D9iAMU87T3BlbkFJPqCaU5KoF6GdtDOPLqmS7yESy1Wea_jVvG7whDXIEA"
@@ -19,11 +20,8 @@ contract_types = {
 
 @app.route('/')
 def serve():
-    return send_from_directory(app.static_folder + '/public', 'index.html')
+    return render_template('index.html')
 
-@app.route('/<path:path>')
-def static_files(path):
-    return send_from_directory(app.static_folder, path)
 
 @app.route('/select', methods=['POST'])
 def select():
@@ -141,7 +139,7 @@ def update_contract():
         # Word 파일 생성
         doc = Document()
         doc.add_paragraph(updated_contract)
-        file_path = 'completed_contract.docx'
+        file_path = './completed_contracts/completed_contract.docx'
         doc.save(file_path)
 
         return jsonify({"contract": updated_contract, "file_path": file_path})
@@ -221,7 +219,7 @@ def extract_fields():
             print(f"[DEBUG] 추출된 JSON: {json.dumps(json_data, ensure_ascii=False, indent=4)}")
 
             # JSON 파일 저장
-            with open('extracted_fields.json', 'w', encoding='utf-8') as json_file:
+            with open('./extracted_fields.json', 'w', encoding='utf-8') as json_file:
                 json.dump(json_data, json_file, ensure_ascii=False, indent=4)
             print("[INFO] JSON 파일 생성 완료: extracted_fields.json")
 
@@ -237,11 +235,12 @@ def extract_fields():
 @app.route('/download', methods=['GET'])
 def download_contract():
     # 저장된 Word 파일 다운로드
-    file_path = 'completed_contract.docx'
+    file_path = './completed_contracts/completed_contract.docx'
     if os.path.exists(file_path):
-        return send_from_directory('.', file_path, as_attachment=True)
+        return send_from_directory('completed_contracts', 'completed_contract.docx', as_attachment=True)
     else:
         return jsonify({"error": "다운로드할 파일이 없습니다."})
+
 
 if __name__ == '__main__':
     app.run(debug=True)
