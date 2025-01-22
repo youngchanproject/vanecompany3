@@ -4,6 +4,7 @@ import os
 import openai
 import re
 import json
+from docx import Document
 
 app = Flask(__name__, static_folder='../frontend', static_url_path='/')
 CORS(app)
@@ -109,6 +110,7 @@ def update_contract():
         return jsonify({"error": "계약서 내용과 필드 데이터가 필요합니다."})
 
     try:
+        # GPT를 사용해 계약서 업데이트
         update_prompt = f"""
         다음 계약서의 내용을 주어진 JSON 데이터를 이용해 업데이트해주세요.
 
@@ -135,7 +137,14 @@ def update_contract():
             temperature=0.7
         )
         updated_contract = response.choices[0].message.content.strip()
-        return jsonify({"contract": updated_contract})
+
+        # Word 파일 생성
+        doc = Document()
+        doc.add_paragraph(updated_contract)
+        file_path = 'completed_contract.docx'
+        doc.save(file_path)
+
+        return jsonify({"contract": updated_contract, "file_path": file_path})
 
     except Exception as e:
         return jsonify({"error": str(e)})
@@ -225,6 +234,14 @@ def extract_fields():
         print(f"[ERROR] GPT API 호출 에러: {e}")
         return jsonify({"error": str(e)})
 
+@app.route('/download', methods=['GET'])
+def download_contract():
+    # 저장된 Word 파일 다운로드
+    file_path = 'completed_contract.docx'
+    if os.path.exists(file_path):
+        return send_from_directory('.', file_path, as_attachment=True)
+    else:
+        return jsonify({"error": "다운로드할 파일이 없습니다."})
 
 if __name__ == '__main__':
     app.run(debug=True)

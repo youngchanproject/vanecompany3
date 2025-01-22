@@ -3,8 +3,14 @@ function appendMessage(message, sender) {
     const chatBox = document.getElementById('chat-box');
     const messageDiv = document.createElement('div');
     messageDiv.className = sender === 'bot' ? 'bot-message' : 'user-message';
+
     messageDiv.textContent = message;
     chatBox.appendChild(messageDiv);
+
+    // 메시지 간 간격 유지 및 정렬 보장
+    chatBox.appendChild(document.createElement('br'));
+
+    // 자동 스크롤
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
@@ -69,7 +75,7 @@ function generateContractContent(selection) {
     });
 }
 
-// 계약서 업데이트 함수
+// 계약서 업데이트 후 버튼 추가
 function updateContract(extractedFields) {
     if (!currentContract) {
         console.error("현재 계약서 내용이 없습니다.");
@@ -91,6 +97,7 @@ function updateContract(extractedFields) {
         if (data.contract) {
             currentContract = data.contract;  // 업데이트된 계약서 내용 저장
             appendMessage("업데이트된 계약서 내용입니다:\n\n" + data.contract, 'bot');
+            addDownloadButton();  // 다운로드 버튼 추가
         } else {
             appendMessage("계약서 업데이트에 실패했습니다.", 'bot');
         }
@@ -99,6 +106,7 @@ function updateContract(extractedFields) {
         appendMessage("서버 오류가 발생했습니다.", 'bot');
     });
 }
+
 
 // 사용자 입력이 필요한 항목 요청 함수
 function requestInputFields(selection) {
@@ -185,3 +193,57 @@ document.getElementById('send-btn').addEventListener('click', function () {
     // ✅ 입력값을 extractContractFields로 전달
     extractContractFields(message);
 });
+
+// 사용자 엔터 키 입력 시 전송
+document.getElementById('text-input').addEventListener('keypress', function (event) {
+    if(event.key === 'Enter') {
+        event.preventDefault(); // 기본 엔터 키 동작 방지
+        const message = document.getElementById('text-input').value.trim();
+
+        if (message === '') return; // 빈 메시지 방지
+
+        appendMessage(message, 'user'); // 사용자 메시지 추가
+        document.getElementById('text-input').value = ''; // 입력 필드 초기화
+
+        // ✅ 입력값을 extractContractFields로 전달
+        extractContractFields(message);
+    }
+});
+
+// 계약서 다운로드 함수
+function downloadContract() {
+    fetch('/download', {
+        method: 'GET'
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.blob();
+        } else {
+            appendMessage("계약서 파일을 다운로드할 수 없습니다.", 'bot');
+        }
+    })
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'completed_contract.docx';  // 다운로드 파일명
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    })
+    .catch(() => {
+        appendMessage("서버 오류가 발생했습니다. 다시 시도해 주세요.", 'bot');
+    });
+}
+
+// 다운로드 버튼 추가
+function addDownloadButton() {
+    const downloadButton = document.createElement('button');
+    downloadButton.textContent = "계약서 다운로드";
+    downloadButton.addEventListener('click', downloadContract);
+
+    const chatBox = document.getElementById('chat-box');
+    chatBox.appendChild(document.createElement('br'));
+    chatBox.appendChild(downloadButton);
+}
